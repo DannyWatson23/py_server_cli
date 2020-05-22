@@ -12,7 +12,6 @@ def create_database():
     #    - ID
     #    - Timestamp of last challenge
     #    - Hello timeout interval
-    #    - Authenticated
     try:
         datab = sqlite3.connect('/tmp/server_active.db')
         c = datab.cursor()
@@ -25,7 +24,6 @@ def create_database():
         time_last_challenge text,
         ID text,
         hello_timeout integer,
-        authenticated boolean
                 )""")
         datab.commit()
         datab.close()
@@ -39,15 +37,15 @@ def update_database(data):
     c.execute(sql)
     _data = c.fetchone()
     if _data == None:
-        sql = " INSERT INTO active_connections(IP, auth_type, mac_address, time_created, time_last_hello, time_last_challenge, ID, hello_timeout, authenticated) VALUES(?,?,?,?,?,?,?,?,?)"
+        sql = " INSERT INTO active_connections(IP, auth_type, mac_address, time_created, time_last_hello, time_last_challenge, ID, hello_timeout) VALUES(?,?,?,?,?,?,?,?)"
         c = conn.cursor()
         c.execute(sql, data)
         conn.commit()
         print("Created entry in table")
         conn.close()
     else:
-        sql = "UPDATE active_connections set IP = ?, time_last_hello = ?, time_last_challenge = ?, authenticated = ? where ID = ?"
-        colValues = (data[0], data[4], data[5], data[-1], data[6])
+        sql = "UPDATE active_connections set IP = ?, time_last_hello = ?, time_last_challenge = ? where ID = ?"
+        colValues = (data[0], data[4], data[5], data[6])
         c = conn.cursor()
         c.execute(sql, colValues)
         conn.commit()
@@ -57,16 +55,16 @@ def check_if_active(ID):
     #Checks the database against the ID, if it is in the active list and has authenticated, allow traffic
     print("Checking if active and authenticated...")
     conn = sqlite3.connect('/tmp/server_active.db')
-    sql = " SELECT authenticated from active_connections where ID is "+"'"+str(ID)+"'"
+    sql = " SELECT from active_connections where ID is "+"'"+str(ID)+"'"
     c = conn.cursor()
     c.execute(sql)
     _data = str(c.fetchone()[0])
     if _data == None:
         print("No entry in database, reject traffic until authenticated...")
-    if '1' in _data:
+    if _data:
         print("Authenticated, allow traffic")
         return True
-    elif '0' in _data:
+    else:
         print("Not authenticated, reject traffic...")
         return False
     conn.close()
@@ -106,7 +104,7 @@ def delete_active():
 def test(data):
     try:
         conn = sqlite3.connect('/tmp/server_active.db')
-        sql = '''INSERT INTO active_connections(IP, auth_type, mac_address, time_created, time_last_hello, time_last_challenge, ID, hello_timeout, authenticated) VALUES(?,?,?,?,?,?,?,?,?)''' 
+        sql = '''INSERT INTO active_connections(IP, auth_type, mac_address, time_created, time_last_hello, time_last_challenge, ID, hello_timeout) VALUES(?,?,?,?,?,?,?,?)''' 
         c = conn.cursor()
         c.execute(sql, data)
         conn.commit()
@@ -124,17 +122,17 @@ def wipe_database():
     conn.commit()
     conn.close()
 
-#data = ("192.168.1.22", "AES", "aa:bb:cc:dd:ee:ff","Fri 22 May 16:28:08 BST 2020","Fri 22 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test", 60, True)
-#data = ("192.168.1.23", "AES", "aa:bb:cc:dd:ee:f3","Fri 21 May 16:28:08 BST 2020","Fri 21 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test1", 180, True)
-#data = ("192.168.1.24", "AES", "aa:bb:cc:dd:ee:f2","Fri 20 May 16:28:08 BST 2020","Fri 20 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test2", 320, True)
-#data = ("192.168.1.25", "None", "aa:bb:cc:dd:ee:f1","Fri 20 May 16:11:08 BST 2020","Fri 22 May 10:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test3", 60, True)
-data = ("192.168.1.26", "Plaintext", "aa:bb:cc:dd:ee:f4","Fri 22 May 16:28:08 BST 2020","Fri 01 May 19:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test4", 90, True)
+#data = ("192.168.1.22", "AES", "aa:bb:cc:dd:ee:ff","Fri 22 May 16:28:08 BST 2020","Fri 22 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test", 60)
+#data = ("192.168.1.23", "AES", "aa:bb:cc:dd:ee:f3","Fri 21 May 16:28:08 BST 2020","Fri 21 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test1", 180)
+#data = ("192.168.1.24", "AES", "aa:bb:cc:dd:ee:f2","Fri 20 May 16:28:08 BST 2020","Fri 20 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test2", 320)
+#data = ("192.168.1.25", "None", "aa:bb:cc:dd:ee:f1","Fri 20 May 16:11:08 BST 2020","Fri 22 May 10:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test3", 60)
+data = ("192.168.1.26", "Plaintext", "aa:bb:cc:dd:ee:f4","Fri 22 May 16:28:08 BST 2020","Fri 01 May 19:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test4", 90)
 ID = data[6]
-#wipe_database()
-#create_database()
+wipe_database()
+create_database()
 #test(data)
-update_database(data)
+#update_database(data)
 #check_last_hello(ID)
 #update_database(data)
-delete_active()
+#delete_active()
 #check_if_active(ID)
