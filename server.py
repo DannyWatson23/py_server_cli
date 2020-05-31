@@ -1,6 +1,8 @@
 import socket
 from Crypto.Cipher import AES
-import os
+import database
+import datetime
+
 PORT = 65430
 
 
@@ -40,7 +42,8 @@ def do_decrypt(ciphertext):
     aes_mode = AES.MODE_CBC
     obj2 = AES.new(key, aes_mode, iv)
     message = obj2.decrypt(ciphertext*16)
-    return message.strip("#")    
+    message = str(message)
+    return message.strip("#")
 
 def get_secrets(conn, addr):
     message = "Username,Password?"
@@ -52,7 +55,8 @@ def get_secrets(conn, addr):
     #ciphertext=ciphertext.encode('utf-8')
     conn.send(ciphertext)
     try:
-        data = conn.recv(4096)
+        data = do_decrypt(conn.recv(4096))
+        print(data)
         user = data.split(b',')[0]
         password = data.split(b',')[1]
         if "root" not in str(user) and "password" not in str(password):
@@ -72,19 +76,35 @@ def get_secrets(conn, addr):
         conn.close()
         pass
 
+def collect(conn, addr):
+    print(conn)
+    database.create_database()
+    IP = conn.split(b',')[0].decode('utf-8')
+    auth_type = conn.split(b',')[1].decode('utf-8')
+    mac_addr = conn.split(b',')[2].decode('utf-8')
+    ID = conn.split(b',')[3].decode('utf-8')
+    hello_timeout = conn.split(b',')[4].decode('utf-8')
+    data = (IP, auth_type, mac_addr, ID, hello_timeout)
+    database.update_database(data)
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM)as s:
-     s.bind(('0.0.0.0', PORT))
+     #s.setblocking(0)
+     s.bind(('10.1.1.1', PORT))
      s.listen()
-     while True:
+     srv_condition = True
+     while srv_condition:
         conn, addr = s.accept()
+        #check database if connection still active, if so, skip the auth
         from_client = ''
         if get_secrets(conn,addr):
             print("Passed auth")
-            data = conn.recv(4096)
-            if not data: break
+            data = collect(conn.recv(4096), addr)
+            #if not data: break
             from_client += str(data)
             print(from_client)
             conn.send(b"I AM SERVER")
             conn.close()
-        print("Connection terminated.")        
+        conn.close()
+        print("Connection terminated.")
+     print("Broke out of infinite loop")        
+     conn.close()
