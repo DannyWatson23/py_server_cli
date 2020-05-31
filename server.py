@@ -1,6 +1,7 @@
 import socket
 from Crypto.Cipher import AES
 import database
+import sys
 import datetime
 
 PORT = 65430
@@ -49,43 +50,54 @@ def get_secrets(conn, addr):
     message = "Username,Password?"
     message = add_padding(message)
     ciphertext = do_encrypt(message)
-    print(ciphertext)
-    print(type(ciphertext))
     #ciphertext = ciphertext.decode('iso-8859-1')
     #ciphertext=ciphertext.encode('utf-8')
     conn.send(ciphertext)
     try:
         data = do_decrypt(conn.recv(4096))
-        print(data)
-        user = data.split(b',')[0]
-        password = data.split(b',')[1]
+        user = data.split(',')[0]
+        password = data.split(',')[1].split("#")[0]
+        user = user.split("'")[1]
         if "root" not in str(user) and "password" not in str(password):
-            conn.send(b"Auth failed")
+            message = "Auth Failed"
+            message = add_padding(message)
+            ciphertext = do_encrypt(message)
+            conn.send(ciphertext)
             conn.close()
-        elif user == b"root" and password == b"password":
-            conn.send(b"[+] Authentication successful")
+        elif user == "root" and password == "password":
+            message = "[+] Authentication Successful"
+            message = add_padding(message)
+            ciphertext = do_encrypt(message)
+            conn.send(ciphertext)
             print(f"[+] Authentication successful from: {addr}")
             return True
         else:
-            conn.send(b"Auth Failed")
+            message = "Auth Failed"
+            message = add_padding(message)
+            ciphertext = do_encrypt(message)
+            conn.send(ciphertext)
             conn.close()
     except IndexError:
         print("Missing user, password or both...")
-        conn.send(b"Missing user, password or both...")
+        message = "Missing user, password or both..."
+        message = add_padding(message)
+        ciphertext = do_encrypt(message)
+        conn.send(ciphertext)
         conn.close()
         conn.close()
         pass
 
-def collect(conn, addr):
-    print(conn)
+def collect(data, addr, conn):
+    data = data.split("#")[0]
+    data = data.split("b'")[1]
     database.create_database()
-    IP = conn.split(b',')[0].decode('utf-8')
-    auth_type = conn.split(b',')[1].decode('utf-8')
-    mac_addr = conn.split(b',')[2].decode('utf-8')
-    ID = conn.split(b',')[3].decode('utf-8')
-    hello_timeout = conn.split(b',')[4].decode('utf-8')
-    data = (IP, auth_type, mac_addr, ID, hello_timeout)
-    database.update_database(data)
+    IP = data.split(',')[0]
+    auth_type = data.split(',')[1]
+    mac_addr = data.split(',')[2]
+    ID = data.split(',')[3]
+    hello_timeout = data.split(',')[4]
+    _data = (IP, auth_type, mac_addr, ID, hello_timeout)
+    database.update_database(_data)
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM)as s:
      #s.setblocking(0)
@@ -98,13 +110,25 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM)as s:
         from_client = ''
         if get_secrets(conn,addr):
             print("Passed auth")
-            data = collect(conn.recv(4096), addr)
+            data = do_decrypt(conn.recv(4096))
+            data = collect(data, addr, conn)
             #if not data: break
             from_client += str(data)
             print(from_client)
-            conn.send(b"I AM SERVER")
+            message = "I AM SERVER"
+            message = add_padding(message)
+            ciphertext = do_encrypt(message)
+            conn.send(ciphertext)
+            if conn:
+                print("still active inside")
             conn.close()
         conn.close()
         print("Connection terminated.")
+        if conn:
+            print("Still active")
+            print(conn)
      print("Broke out of infinite loop")        
      conn.close()
+     if conn:
+         print("Still active")
+         print(conn)

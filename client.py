@@ -27,7 +27,8 @@ def send_secrets(data,s):
      if "Username,Password?" in data:
         s.send(b"root,password")
         print(s.recv(4096))
-        s.send(b"11111111111111111111111")
+        s.send(b"192.168.1.50,AES,a1:b3:5d:af:cc:ff,remote5:,1")
+
         data= s.recv(4096)
         print(data)
         return True

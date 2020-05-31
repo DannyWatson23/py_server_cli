@@ -49,10 +49,11 @@ def send_secrets(data,s):
         message = add_padding(message)
         s.send(do_encrypt(message))
         #s.send(b"root,password")
-        print(s.recv(4096))
-        s.send(b"192.168.1.50,AES,a1:b3:5d:af:cc:ff,remote99,1")
-
-        data= s.recv(4096)
+        do_decrypt(s.recv(4096))
+        message = "192.168.1.50,AES,a1:b3:5d:af:cc:ff,remote99,1"
+        message = add_padding(message)
+        s.send(do_encrypt(message))
+        data = do_encrypt(s.recv(4096))
         print(data)
         return True
      else:

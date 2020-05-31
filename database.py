@@ -1,5 +1,11 @@
 import sqlite3
 import datetime
+from multiprocessing.dummy import Pool as ThreadPool
+import threading
+import time
+import logging
+logging.basicConfig(level=logging.DEBUG, filename='/tmp/master.log', format='%(asctime)s %(levelname)s %(threadName)s:%(message)s')
+
 
 def create_database():
     # create on launch, checks to see if already created
@@ -23,33 +29,49 @@ def create_database():
         time_last_hello text,
         time_last_challenge text,
         ID text,
-        hello_timeout integer,
+        hello_timeout integer
                 )""")
         datab.commit()
         datab.close()
     except Exception as e:
+            print(e)
             pass
+    
+def if_hello_exceeded(last_hello, now, hello):
+    last_hello_time = datetime.datetime.strptime(last_hello.split('.')[0], "%Y-%m-%d %H:%M:%S")
+    print(last_hello_time)
+    print(now)
+    time_differential = now - last_hello_time
+    print(time_differential)
+    print(hello)    
+    
+    
+
+    
 def update_database(data):
     #Updates the database with the hello received, the ID and the timestamp, if does not exist, create
     conn = sqlite3.connect('/tmp/server_active.db')
-    sql = " SELECT * from active_connections where ID is "+"'"+str(ID)+"'"
+    sql = " SELECT * from active_connections where ID is "+"'"+str(data[3])+"'"
     c = conn.cursor()
+    now = datetime.datetime.now()
+    sql_data = (data[0], data[1], data[2], now, now, now, data[3], data[4])
     c.execute(sql)
     _data = c.fetchone()
     if _data == None:
         sql = " INSERT INTO active_connections(IP, auth_type, mac_address, time_created, time_last_hello, time_last_challenge, ID, hello_timeout) VALUES(?,?,?,?,?,?,?,?)"
         c = conn.cursor()
-        c.execute(sql, data)
+        c.execute(sql, sql_data)
         conn.commit()
         print("Created entry in table")
         conn.close()
     else:
-        sql = "UPDATE active_connections set IP = ?, time_last_hello = ?, time_last_challenge = ? where ID = ?"
-        colValues = (data[0], data[4], data[5], data[6])
+        sql = "UPDATE active_connections set time_last_hello = ? where ID = ?"
+        print(data)
+        colValues = (now, data[3])
         c = conn.cursor()
         c.execute(sql, colValues)
         conn.commit()
-        print("Updated table")
+        print("Last hello updated.")
         conn.close()
 def check_if_active(ID):
     #Checks the database against the ID, if it is in the active list and has authenticated, allow traffic
@@ -77,30 +99,15 @@ def check_last_hello(ID):
     data = c.fetchall()
     conn.close()
     print(data)
-def delete_active():
+def delete_unactive(ID):
     # If the hello timeout has exceeded [TBD] then the ID is removed from the active connections
-    time = datetime.datetime.now()
+    sql = "DELETE from active_connections where ID is "+"'"+str(ID)+"'"
     conn = sqlite3.connect('/tmp/server_active.db')
-    sql = "SELECT time_last_hello from active_connections where ID is "+"'"+str(ID)+"'"
     c = conn.cursor()
     c.execute(sql)
-    data = c.fetchone()[0]
-    data = data.split(" ")
-    new_date = data[1] + " " + data[2] + " " + data[3] + " " + data[5]
-    #print new_date
-    last_hello_time = datetime.datetime.strptime(new_date, "%d %b %H:%M:%S %Y")
-    #print(last_hello_time)
-    #print(time)
-    time_differential = time - last_hello_time
-    #print time_differential
-    if time_differential > datetime.timedelta(minutes=30):
-        print("Exceeded 30 minutes since last hello")
-        sql = "DELETE from active_connections where ID is "+"'"+str(ID)+"'"
-        c.execute(sql)
-        conn.commit()
-        print("Deleted active session from database due to hello timeout")
+    conn.commit()
+    logging.debug("Deleted active session from database due to hello timeout")
     conn.close()
-
 def test(data):
     try:
         conn = sqlite3.connect('/tmp/server_active.db')
@@ -112,6 +119,75 @@ def test(data):
     except Exception as e:
         print(e)
         pass
+    
+def report_last_hello(ID, hello_interval):
+    print("Checking "+ str(ID) + " for last hello " + str(hello_interval))
+    logging.info("Current thread: "+ str(threading.currentThread()))
+    
+    print(ID)
+    try:
+     while True:
+        time.sleep(1)
+        conn = sqlite3.connect('/tmp/server_active.db')
+        print(conn)
+        sql = "SELECT time_last_hello from active_connections where ID is "+"'"+str(ID)+"'"
+        c = conn.cursor()
+        c.execute(sql)
+        conn.commit()
+        _data = c.fetchone()
+        conn.close()
+        now = datetime.datetime.now()
+        last_time = str(_data).split('.')[0]
+        last_time = last_time.split("'")[1]
+        last_time = datetime.datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
+        time_differential = now - last_time
+        print(time_differential)
+        if time_differential >= datetime.timedelta(minutes=hello_interval):
+            logging.debug(str(ID)+" is eligble to be marked as delete from database due to exceeding hello timeout")
+            delete_unactive(ID)
+    except Exception as e:
+        with open("/tmp/error.log", "a+")as file:
+            file.write(str(e))
+            file.close()
+        pass        
+            
+    
+        
+    
+def spawn_watchdogs():
+    #TODO: We need to figure out a way for it to dynamically create new threads while ensuring it doesn't create duplicate threads
+    #
+    #    new_thread = MyThread(next_job_details())
+    #    new_thread.run()
+    #    my_threads.append(new_thread)
+    #  THIS WAY WE CAN SEARCH THE LIST FOR ACTIVE THREADS AND DECIDE NOT TO RUN IF THERE IS ALREADY ONE RUNNING
+    #
+    #
+    while True:
+        conn = sqlite3.connect('/tmp/server_active.db')
+        sql = """ SELECT * from active_connections """
+        c = conn.cursor()
+        c.execute(sql)
+        conn.commit()
+        _data = c.fetchall()
+        if len(_data) > 0:
+            conn.close()
+            logging.info("Found hosts, running watchdog...")
+            print(_data)
+            for active_session in _data:
+                thread = threading.Thread(target=report_last_hello, args=(active_session[6], active_session[7]))
+                thread.daemon = True          
+                thread.start()
+                #thread.join()
+                logging.info("Sleeping 5 minutes...")
+        else:
+           conn.close()
+           logging.info("No active hosts found in database... sleeping")
+        time.sleep(5)
+        print("Slept!")
+        
+        
+    
     
 
 def wipe_database():
@@ -126,10 +202,10 @@ def wipe_database():
 #data = ("192.168.1.23", "AES", "aa:bb:cc:dd:ee:f3","Fri 21 May 16:28:08 BST 2020","Fri 21 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test1", 180)
 #data = ("192.168.1.24", "AES", "aa:bb:cc:dd:ee:f2","Fri 20 May 16:28:08 BST 2020","Fri 20 May 16:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test2", 320)
 #data = ("192.168.1.25", "None", "aa:bb:cc:dd:ee:f1","Fri 20 May 16:11:08 BST 2020","Fri 22 May 10:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test3", 60)
-data = ("192.168.1.26", "Plaintext", "aa:bb:cc:dd:ee:f4","Fri 22 May 16:28:08 BST 2020","Fri 01 May 19:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test4", 90)
-ID = data[6]
-wipe_database()
-create_database()
+#data = ("192.168.1.26", "Plaintext", "aa:bb:cc:dd:ee:f4","Fri 22 May 16:28:08 BST 2020","Fri 01 May 19:16:23 BST 2020", "Fri 22 May 16:30:23 BST 2020", "test4", 90)
+#ID = data[6]
+#wipe_database()
+#create_database()
 #test(data)
 #update_database(data)
 #check_last_hello(ID)
